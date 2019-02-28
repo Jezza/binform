@@ -1,0 +1,15 @@
+[package]
+name = "binform_derive"
+version = "0.1.0"
+authors = ["Jezza <jezzadabomb@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "binform_derive"
+proc-macro = true
+
+[dependencies]
+darling = "0.8"
+proc-macro2 = "0.4"
+quote = "0.6"
+syn = { version = "0.15", features = ["printing"] }

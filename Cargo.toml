@@ -1,0 +1,5 @@
+[workspace]
+members = [
+	"binform",
+	"binform_derive"
+]

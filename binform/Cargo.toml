@@ -1,0 +1,11 @@
+[package]
+name = "binform"
+version = "0.1.0"
+authors = ["Jezza <jezzadabomb@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+byteorder = "1.3"
+failure = "0.1.5"
+
+binform_derive = {path = "../binform_derive"}
