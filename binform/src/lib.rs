@@ -42,36 +42,51 @@ pub trait ToBytes<E: ByteOrder = NativeEndian, L = ()> {
 	fn to_bytes<O: Write>(&self, output: &mut O) -> WriteResult;
 }
 
+//fn write<O: Write, T>(value: &T, output: &mut O) -> WriteResult {
+//	unimplemented!()
+//}
+//
+//fn read<I: Read, T: Sized>(input: &mut I) -> ReadResult<T> {
+//	unimplemented!()
+//}
+
+#[doc(hidden)]
+type ReadFunction<I: Read, T: Sized> = fn(&mut I) -> ReadResult<T>;
+#[doc(hidden)]
+type WriteFunction<O: Write, T> = fn(&T, &mut O) -> WriteResult;
+
 macro_rules! def_read {
-    ($ty:ty => $($method:tt)*) => {
-		impl<BO: ByteOrder, L> FromBytes<BO, L> for $ty {
+    ($ty:ident $(<$generic:ident>)?, $input:ident => $($method:tt)*) => {
+		impl<BO: ByteOrder, L $(,$generic)?> FromBytes<BO, L> for $ty $(<$generic>)? {
 			type Output = Self;
 		
-			fn from_bytes<I: Read>(input: &mut I) -> ReadResult<Self::Output> {
-				Ok(input.$($method)*)
+			fn from_bytes<I: Read>($input: &mut I) -> ReadResult<Self::Output> {
+				Ok($($method)*)
 			}
 		}
     };
 }
 
-def_read!(u8 => read_u8()?);
-def_read!(u16 => read_u16::<BO>()?);
-def_read!(u32 => read_u32::<BO>()?);
-def_read!(u64 => read_u64::<BO>()?);
+def_read!(u8, input => input.read_u8()?);
+def_read!(u16, input => input.read_u16::<BO>()?);
+def_read!(u32, input => input.read_u32::<BO>()?);
+def_read!(u64, input => input.read_u64::<BO>()?);
 #[cfg(has_u128)]
-def_read!(u128 => read_u128::<BO>()?);
+def_read!(u128, input => input.read_u128::<BO>()?);
 
-def_read!(i8 => read_i8()?);
-def_read!(i16 => read_i16::<BO>()?);
-def_read!(i32 => read_i32::<BO>()?);
-def_read!(i64 => read_i64::<BO>()?);
+def_read!(i8, input => input.read_i8()?);
+def_read!(i16, input => input.read_i16::<BO>()?);
+def_read!(i32, input => input.read_i32::<BO>()?);
+def_read!(i64, input => input.read_i64::<BO>()?);
 #[cfg(has_i128)]
-def_read!(i128 => read_i128::<BO>()?);
+def_read!(i128, input => input.read_i128::<BO>()?);
 
-def_read!(f32 => read_f32::<BO>()?);
-def_read!(f64 => read_f64::<BO>()?);
+def_read!(f32, input => input.read_f32::<BO>()?);
+def_read!(f64, input => input.read_f64::<BO>()?);
 
-def_read!(bool => read_u8()? != 0);
+def_read!(bool, input => input.read_u8()? != 0);
+
+def_read!(PhantomData<T>, _input => PhantomData);
 
 impl<BO, T, L> FromBytes<BO, L> for Vec<T>
 	where
@@ -92,50 +107,37 @@ impl<BO, T, L> FromBytes<BO, L> for Vec<T>
 	}
 }
 
-impl<BO: ByteOrder, T> FromBytes<BO, ()> for PhantomData<T> {
-	type Output = Self;
-
-	fn from_bytes<I: Read>(input: &mut I) -> Result<Self::Output, ReadError> {
-		Ok(PhantomData)
-	}
-}
-
-impl<BO: ByteOrder, T> ToBytes<BO, ()> for PhantomData<T> {
-	fn to_bytes<O: Write>(&self, output: &mut O) -> Result<(), WriteError> {
-		Ok(())
-	}
-}
-
 macro_rules! def_write {
-    ($ty:ty, $ident:ident => $($method:tt)*) => {
-		impl<BO: ByteOrder, L> ToBytes<BO, L> for $ty {
-			fn to_bytes<O: Write>(&self, output: &mut O) -> WriteResult {
-				let $ident = self;
-				Ok(output.$($method)*)
+    ($ty:ident $(< $generic:ident>)?, ($value:ident, $out:ident) => $($method:tt)*) => {
+		impl<BO: ByteOrder, L $(, $generic)?> ToBytes<BO, L> for $ty $(<$generic>)? {
+			fn to_bytes<O: Write>(&self, $out: &mut O) -> WriteResult {
+				let $value = self;
+				Ok($($method)*)
 			}
 		}
     };
 }
 
-def_write!(u8, v => write_u8(*v)?);
-def_write!(u16, v => write_u16::<BO>(*v)?);
-def_write!(u32, v => write_u32::<BO>(*v)?);
-def_write!(u64, v => write_u64::<BO>(*v)?);
+def_write!(u8, (v, output) => output.write_u8(*v)?);
+def_write!(u16, (v, output) => output.write_u16::<BO>(*v)?);
+def_write!(u32, (v, output) => output.write_u32::<BO>(*v)?);
+def_write!(u64, (v, output) => output.write_u64::<BO>(*v)?);
 #[cfg(has_u128)]
-def_write!(u128, v => write_u128::<BO>(*v)?);
+def_write!(u128, (v, output) => output.write_u128::<BO>(*v)?);
 
-def_write!(i8, v => write_i8(*v)?);
-def_write!(i16, v => write_i16::<BO>(*v)?);
-def_write!(i32, v => write_i32::<BO>(*v)?);
-def_write!(i64, v => write_i64::<BO>(*v)?);
+def_write!(i8, (v, output) => output.write_i8(*v)?);
+def_write!(i16, (v, output) => output.write_i16::<BO>(*v)?);
+def_write!(i32, (v, output) => output.write_i32::<BO>(*v)?);
+def_write!(i64, (v, output) => output.write_i64::<BO>(*v)?);
 #[cfg(has_i128)]
-def_write!(i128, v => write_i128::<BO>(*v)?);
+def_write!(i128, (v, output) => output.write_i128::<BO>(*v)?);
 
-def_write!(f32, v => write_f32::<BO>(*v)?);
-def_write!(f64, v => write_f64::<BO>(*v)?);
+def_write!(f32, (v, output) => output.write_f32::<BO>(*v)?);
+def_write!(f64, (v, output) => output.write_f64::<BO>(*v)?);
 
-def_write!(bool, v => write_u8(if *v { 1 } else { 0 })?);
+def_write!(bool, (v, output) => output.write_u8(if *v { 1 } else { 0 })?);
 
+def_write!(PhantomData<T>, (_v, _output) => ());
 
 impl<BO, T, L> ToBytes<BO, L> for Vec<T>
 	where

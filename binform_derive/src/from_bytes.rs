@@ -1,103 +1,70 @@
-use proc_macro2::{TokenStream, TokenTree};
+use darling::{
+	ast::Data,
+	ast::Style,
+};
+use darling::ast::Fields;
+use proc_macro2::TokenStream;
 use quote::ToTokens;
 use syn::{self, Ident};
-use syn::Meta::{List, NameValue, Word};
-use syn::NestedMeta::{Literal, Meta};
-use syn::parse::{self, Parse, ParseStream};
-use syn::punctuated::Punctuated;
+use syn::Path;
 use syn::spanned::Spanned;
+use syn::Type;
 
 use crate::attr::Container;
-use syn::{
-	Type,
-	TypePath
-};
 use crate::attr::Endian;
-use darling::ast::Style;
-use darling::ast::Data;
-use syn::Path;
+use crate::attr::EnumVariant;
+use crate::attr::StructField;
 
 pub fn expand_derive(input: &syn::DeriveInput) -> Result<TokenStream, Vec<syn::Error>> {
 	let container = Container::from_ast(input);
 
 	let name = &container.ident;
 	let span = name.span();
+	let endian = container.endian.as_ident(span);
 	let function_body = match container.data {
 		Data::Struct(fields) => {
-			let (style, fields) = fields.split();
-			if style == Style::Unit {
-				quote!(Ok(#name))
-			} else {
-				let mut tokens = TokenStream::new();
-				let mut names = vec![];
+			let qualified_name = quote!(#name);
+			let (mut extraction, construct) = analyse_fields(fields, qualified_name, container.endian);
+			let t = quote_spanned!(span => Ok(#construct));
+			t.to_tokens(&mut extraction);
+			extraction
+		}
+		Data::Enum(variants) => {
+			let tag = container.tag.expect("enum requires tag");
+			let tag_ty = syn::parse_str::<Type>(&tag).unwrap();
+			let mut match_arms = TokenStream::new();
 
-				for (i, f) in fields.iter().enumerate() {
-					let span = f.ty.span();
+			for EnumVariant {
+				ident: variant_name,
+				tag,
+				fields,
+			} in variants {
+				let span = variant_name.span();
 
-					let name = format!("_{}", i);
-					let ghost = Ident::new(&name, span);
-					let field_name = if let Some(ident) = f.ident.as_ref() {
-						ident
-					} else {
-						&ghost
-					};
-					names.push(field_name.clone());
+				let qualified_name = quote_spanned!(span => #name::#variant_name);
+				let (extraction, construct) = analyse_fields(fields, qualified_name, container.endian);
 
-					let extraction = {
-						if let Some(name) = &f.read {
-							let method = syn::parse_str::<Path>(name).unwrap();
-							quote_spanned! { span =>
-								#method(input)?
-							}
-						} else {
-							let ty = &f.ty;
-							let endian = match f.endian.unwrap_or(container.endian) {
-								Endian::Big => Ident::new("BigEndian", span),
-								Endian::Little => Ident::new("LittleEndian", span),
-							};
-							let len = if let Some(len) = &f.len {
-								let name = Ident::new(&len, span);
-								quote!(#name)
-							} else {
-								quote!(())
-							};
-							quote_spanned! { span =>
-								<#ty as FromBytes<#endian, #len>>::from_bytes(input)?
-							}
-						}
-					};
+				// Add each match arm as a bunch of tokens, as it's all going to be dumped into the main quote!
+				let t = quote_spanned!(span => #tag => {#extraction #construct});
+				t.to_tokens(&mut match_arms);
+			}
 
-					let t = quote! {
-						let #field_name = #extraction;
-					};
-					t.to_tokens(&mut tokens);
-				}
+			quote_spanned! { span =>
+				let tag = <#tag_ty as FromBytes<#endian, ()>>::from_bytes(input)?;
 
-				let t = if style == Style::Struct {
-					quote! {
-						Ok(#name {
-							#(#names),*
-						})
-					}
-				} else {
-					quote!(Ok(#name(#(#names),*)))
+				let result = match tag {
+					#match_arms
+					_ => panic!("Unknown tag: {}", tag)
 				};
-				t.to_tokens(&mut tokens);
 
-				tokens
+				Ok(result)
 			}
 		}
-		_ => quote!(panic!("Unhandled"))
-	};
-
-	let endian = match container.endian {
-		Endian::Big => Ident::new("BigEndian", span),
-		Endian::Little => Ident::new("LittleEndian", span),
 	};
 
 	let (impl_generics, ty_generics, where_clause) = container.generics.split_for_impl();
 
-	let t = quote! {
+	let t = quote_spanned! { span =>
 		impl #impl_generics FromBytes<#endian, ()> for #name #ty_generics #where_clause {
 			type Output = Self;
 		
@@ -106,8 +73,62 @@ pub fn expand_derive(input: &syn::DeriveInput) -> Result<TokenStream, Vec<syn::E
 			}
 		}
 	};
+	Ok(t)
+}
 
-	let mut out = TokenStream::new();
-	t.to_tokens(&mut out);
-	Ok(out)
+fn analyse_fields(fields: Fields<StructField>, qualified_name: TokenStream, default_endian: Endian) -> (TokenStream, TokenStream) {
+	let Fields {
+		style,
+		fields,
+	} = fields;
+	if style == Style::Unit {
+		return (TokenStream::new(), qualified_name);
+	}
+	let span = qualified_name.span();
+	let mut extraction = TokenStream::new();
+	let mut construct = TokenStream::new();
+
+	for (i, f) in fields.into_iter().enumerate() {
+		let span = f.ty.span();
+
+		let extract = if let Some(name) = &f.read {
+			let method = syn::parse_str::<Path>(name).unwrap();
+			quote_spanned!(span => #method(input)?)
+		} else {
+			let ty = &f.ty;
+			let endian = f.endian
+				.unwrap_or(default_endian)
+				.as_ident(span);
+			let len = if let Some(len) = &f.len {
+				let name = Ident::new(&len, span);
+				quote_spanned!(span => #name)
+			} else {
+				quote_spanned!(span => ())
+			};
+			quote_spanned! { span =>
+				<#ty as FromBytes<#endian, #len>>::from_bytes(input)?
+			}
+		};
+
+		let (field_name, _drop_me) = if let Some(field_name) = f.ident {
+			(field_name, String::new())
+		} else {
+			let name = format!("_{}", i);
+			(Ident::new(&name, span), name)
+		};
+
+		let t = quote!(#field_name,);
+		t.to_tokens(&mut construct);
+
+		let t = quote_spanned!(span => let #field_name = #extract;);
+		t.to_tokens(&mut extraction);
+	}
+
+	let construction = if style == Style::Struct {
+		quote_spanned!(span => #qualified_name { #construct } )
+	} else {
+		quote_spanned!(span => #qualified_name ( #construct ) )
+	};
+
+	(extraction, construction)
 }

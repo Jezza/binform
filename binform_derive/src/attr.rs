@@ -1,19 +1,17 @@
 use darling::{
 	ast,
+	ast::Fields,
 	FromDeriveInput,
 	FromMeta,
+	FromVariant,
 };
 use syn::{
 	self,
 	Ident,
 	Type,
 };
-use syn::Meta::{List, NameValue, Word};
-use syn::NestedMeta::{Literal, Meta};
-use syn::parse::{self, Parse, ParseStream};
-use syn::punctuated::Punctuated;
-use syn::spanned::Spanned;
 use syn::Generics;
+use proc_macro2::Span;
 
 #[derive(FromDeriveInput, Debug)]
 #[darling(attributes(binform))]
@@ -23,10 +21,12 @@ pub struct Container {
 	#[darling(default)]
 	pub endian: Endian,
 
-//	pub generics: Generics<GenericParam>,
 	pub generics: Generics,
 
-	pub data: ast::Data<darling::util::Ignored, StructField>,
+	#[darling(default)]
+	pub tag: Option<String>,
+
+	pub data: ast::Data<EnumVariant, StructField>,
 }
 
 impl Container {
@@ -41,6 +41,15 @@ pub enum Endian {
 	Big,
 	#[darling(rename = "le")]
 	Little,
+}
+
+impl Endian {
+	pub fn as_ident(&self, span: Span) -> Ident {
+		match self {
+			Endian::Big => Ident::new("BigEndian", span),
+			Endian::Little => Ident::new("LittleEndian", span),
+		}
+	}
 }
 
 #[cfg(target_endian = "little")]
@@ -74,4 +83,14 @@ pub struct StructField {
 
 	#[darling(default)]
 	pub write: Option<String>,
+}
+
+#[derive(Debug, FromVariant)]
+#[darling(attributes(binform))]
+pub struct EnumVariant {
+	pub ident: Ident,
+
+	pub tag: syn::Lit,
+
+	pub fields: Fields<StructField>,
 }
