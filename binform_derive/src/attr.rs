@@ -83,6 +83,32 @@ pub struct StructField {
 
 	#[darling(default)]
 	pub write: Option<String>,
+
+	#[darling(default)]
+	pub before: Option<Behaviour>,
+
+	#[darling(default)]
+	pub after: Option<Behaviour>,
+}
+
+#[derive(Debug, FromMeta)]
+pub struct Behaviour {
+	#[darling(default)]
+	pub expect: Option<Expect>,
+
+	#[darling(default, multiple)]
+	pub read: Vec<String>,
+
+	#[darling(default, multiple)]
+	pub write: Vec<String>,
+}
+
+#[derive(Debug, FromMeta)]
+pub struct Expect {
+	#[darling(rename = "type")]
+	pub ty: String,
+	
+	pub value: syn::Lit,
 }
 
 #[derive(Debug, FromVariant)]

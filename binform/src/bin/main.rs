@@ -72,6 +72,7 @@ pub fn main() {
 //	let buf: Vec<u8> = vec![0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x52, 0x00, 0x00, 0x01, 0x00];
 //	let buf: Vec<u8> = vec![0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x08, 0x00, 0x01, 0x00];
 	let buf: Vec<u8> = vec![
+		0xCA, 0xFE, 0xBA, 0xBE,
 		0x00, 0x03, // Count
 		0x01, // UTF8
 			0x00, 0x02, // len = 2
@@ -92,6 +93,20 @@ pub fn main() {
 	value.to_bytes(&mut buf).unwrap();
 	println!("{:?}", out);
 }
+
+#[derive(Debug, FromBytes)]
+#[binform(endian = "be")]
+struct Info {
+//	#[binform(len = "u8", read = "read")]
+//	data: &'a [u8]
+	#[binform(len = "u8")]
+	data: Vec<u8>
+}
+
+//fn read<'a, 'b, I: Read, BO: ByteOrder, L>(input: &'a mut I) -> ReadResult<&'b [u8]> {
+//	input.read()
+//	unimplemented!()
+//}
 
 //	_u8: u8,
 //	_u16: u16,
@@ -146,9 +161,7 @@ pub fn main() {
 #[derive(Debug, ToBytes, FromBytes, Default)]
 #[binform(endian = "be")]
 pub struct ClassFile<'a> {
-	////	#[binform(magic = 0xCA_FE_BA_BE)]
-////	_magic: u32,
-//	#[binform(before(magic = 0xCA_FE_BA_BE))]
+	#[binform(before(expect(type = "u32", value = 0xCA_FE_BA_BE)))]
 	pub minor_version: u16,
 	pub major_version: u16,
 	pub constant_pool: ConstantPool<'a>,
@@ -169,7 +182,7 @@ pub struct ClassFile<'a> {
 #[derive(Debug, ToBytes, FromBytes, Default)]
 #[binform(endian = "be")]
 pub struct ConstantPool<'a> {
-	#[binform(len = "u16")]
+	#[binform(len = "u16", before(expect(type = "u32", value = 0xCA_FE_BA_BE)))]
 	entries: Vec<CPEntry<'a>>,
 //	_marker: PhantomData<&'a ()>,
 }

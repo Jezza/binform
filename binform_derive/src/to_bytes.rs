@@ -14,6 +14,7 @@ use crate::attr::Container;
 use crate::attr::Endian;
 use crate::attr::EnumVariant;
 use crate::attr::StructField;
+use crate::attr::Expect;
 
 pub fn expand_derive(input: &syn::DeriveInput) -> Result<TokenStream, Vec<syn::Error>> {
 	let container = Container::from_ast(input);
@@ -66,7 +67,7 @@ pub fn expand_derive(input: &syn::DeriveInput) -> Result<TokenStream, Vec<syn::E
 	let endian = container.endian.as_ident(span);
 	let (impl_generics, ty_generics, where_clause) = container.generics.split_for_impl();
 
-	let t = quote! {
+	let t = quote_spanned! { span =>
 		impl #impl_generics ToBytes<#endian, ()> for #name #ty_generics #where_clause {
 		
 			fn to_bytes<O: Write>(&self, output: &mut O) -> WriteResult {
@@ -100,11 +101,7 @@ fn analyse_fields(fields: Fields<StructField>, qualified_name: TokenStream, defa
 			(Ident::new(&name, span), name)
 		};
 
-		let insert = if let Some(name) = &f.write {
-			let method = syn::parse_str::<Path>(name).unwrap();
-			quote_spanned!(span => #method(#field_name, output)?)
-		} else {
-			let ty = &f.ty;
+		let generics = {
 			let endian = f.endian
 				.unwrap_or(default_endian)
 				.as_ident(span);
@@ -114,16 +111,70 @@ fn analyse_fields(fields: Fields<StructField>, qualified_name: TokenStream, defa
 			} else {
 				quote_spanned!(span => ())
 			};
+			quote_spanned!(span => #endian, #len)
+		};
+
+		let insert = if let Some(name) = &f.write {
+			let method = syn::parse_str::<Path>(name).unwrap();
 			quote_spanned! { span =>
-				<#ty as ToBytes<#endian, #len>>::to_bytes(#field_name, output)?
+				#method::<O, #generics>(#field_name, output)?
+			}
+		} else {
+			let ty = &f.ty;
+			quote_spanned! { span =>
+				<#ty as ToBytes<#generics>>::to_bytes(#field_name, output)?
 			}
 		};
 
-		let t = quote!(#field_name,);
+		let t = quote_spanned!(span => #field_name,);
 		t.to_tokens(&mut deconstruct);
 
-		let t = quote!(#insert;);
+		if let Some(before) = f.before {
+			if let Some(Expect {
+							ty,
+							value,
+						}) = before.expect {
+
+				let ty = syn::parse_str::<Type>(&ty).unwrap();
+
+				let t = quote_spanned! { span =>
+					<#ty as ToBytes<#generics>>::to_bytes(&#value, output)?;
+				};
+				t.to_tokens(&mut insertion);
+			}
+			for name in before.write {
+				let method = syn::parse_str::<Path>(&name).unwrap();
+				let t = quote_spanned! { span =>
+					#method::<O, #generics>(output)?;
+				};
+				t.to_tokens(&mut insertion);
+			}
+		}
+
+		let t = quote_spanned!(span => #insert;);
 		t.to_tokens(&mut insertion);
+
+		if let Some(after) = f.after {
+			if let Some(Expect {
+							ty,
+							value,
+						}) = after.expect {
+
+				let ty = syn::parse_str::<Type>(&ty).unwrap();
+
+				let t = quote_spanned! { span =>
+					<#ty as ToBytes<#generics>>::to_bytes(&#value, output)?;
+				};
+				t.to_tokens(&mut insertion);
+			}
+			for name in after.write {
+				let method = syn::parse_str::<Path>(&name).unwrap();
+				let t = quote_spanned! { span =>
+					#method::<O, #generics>(output)?;
+				};
+				t.to_tokens(&mut insertion);
+			}
+		}
 	}
 
 	let deconstruction = if style == Style::Struct {

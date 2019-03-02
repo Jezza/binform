@@ -1,5 +1,3 @@
-#![feature(try_from)]
-
 extern crate binform_derive;
 extern crate byteorder;
 #[macro_use]
@@ -42,18 +40,14 @@ pub trait ToBytes<E: ByteOrder = NativeEndian, L = ()> {
 	fn to_bytes<O: Write>(&self, output: &mut O) -> WriteResult;
 }
 
-//fn write<O: Write, T>(value: &T, output: &mut O) -> WriteResult {
-//	unimplemented!()
-//}
-//
-//fn read<I: Read, T: Sized>(input: &mut I) -> ReadResult<T> {
-//	unimplemented!()
-//}
-
-#[doc(hidden)]
-type ReadFunction<I: Read, T: Sized> = fn(&mut I) -> ReadResult<T>;
-#[doc(hidden)]
-type WriteFunction<O: Write, T> = fn(&T, &mut O) -> WriteResult;
+//#[doc(hidden)]
+//type CallReadFunction<I: Read, BO: ByteOrder, L> = fn(&mut I) -> ReadResult<()>;
+//#[doc(hidden)]
+//type CallWriteFunction<O: Write, BO: ByteOrder, L> = fn(&mut O) -> WriteResult;
+//#[doc(hidden)]
+//type ReadFunction<I: Read, BO: ByteOrder, L, T: Sized> = fn(&mut I) -> ReadResult<T>;
+//#[doc(hidden)]
+//type WriteFunction<O: Write, BO: ByteOrder, L, T> = fn(&T, &mut O) -> WriteResult;
 
 macro_rules! def_read {
     ($ty:ident $(<$generic:ident>)?, $input:ident => $($method:tt)*) => {

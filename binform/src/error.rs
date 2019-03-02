@@ -5,6 +5,9 @@ use ::std::io::Error as IOError;
 pub enum ReadError {
 	#[fail(display = "IO error")]
 	IO(#[fail(cause)] IOError),
+
+	#[fail(display = "Expectation not met")]
+	InvalidExpectation,
 }
 
 #[derive(Debug, Fail)]

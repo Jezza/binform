@@ -13,6 +13,7 @@ use syn::Type;
 use crate::attr::Container;
 use crate::attr::Endian;
 use crate::attr::EnumVariant;
+use crate::attr::Expect;
 use crate::attr::StructField;
 
 pub fn expand_derive(input: &syn::DeriveInput) -> Result<TokenStream, Vec<syn::Error>> {
@@ -91,11 +92,7 @@ fn analyse_fields(fields: Fields<StructField>, qualified_name: TokenStream, defa
 	for (i, f) in fields.into_iter().enumerate() {
 		let span = f.ty.span();
 
-		let extract = if let Some(name) = &f.read {
-			let method = syn::parse_str::<Path>(name).unwrap();
-			quote_spanned!(span => #method(input)?)
-		} else {
-			let ty = &f.ty;
+		let generics = {
 			let endian = f.endian
 				.unwrap_or(default_endian)
 				.as_ident(span);
@@ -105,8 +102,18 @@ fn analyse_fields(fields: Fields<StructField>, qualified_name: TokenStream, defa
 			} else {
 				quote_spanned!(span => ())
 			};
+			quote_spanned!(span => #endian, #len)
+		};
+
+		let extract = if let Some(name) = &f.read {
+			let method = syn::parse_str::<Path>(name).unwrap();
 			quote_spanned! { span =>
-				<#ty as FromBytes<#endian, #len>>::from_bytes(input)?
+				#method::<I, #generics>(input)?
+			}
+		} else {
+			let ty = &f.ty;
+			quote_spanned! { span =>
+				<#ty as FromBytes<#generics>>::from_bytes(input)?
 			}
 		};
 
@@ -117,11 +124,57 @@ fn analyse_fields(fields: Fields<StructField>, qualified_name: TokenStream, defa
 			(Ident::new(&name, span), name)
 		};
 
-		let t = quote!(#field_name,);
+		let t = quote_spanned!(span => #field_name,);
 		t.to_tokens(&mut construct);
+
+		if let Some(before) = f.before {
+			if let Some(Expect {
+							ty,
+							value,
+						}) = before.expect {
+
+				let ty = syn::parse_str::<Type>(&ty).unwrap();
+
+				let t = quote_spanned! { span =>
+					let value = <#ty as FromBytes<#generics>>::from_bytes(input)?;
+					if value != #value {
+						return Err(ReadError::InvalidExpectation);
+					}				
+				};
+				t.to_tokens(&mut extraction);
+			}
+			for name in before.read {
+				let method = syn::parse_str::<Path>(&name).unwrap();
+				let t = quote_spanned!(span => #method::<I, #generics>(input)?;);
+				t.to_tokens(&mut extraction);
+			}
+		}
 
 		let t = quote_spanned!(span => let #field_name = #extract;);
 		t.to_tokens(&mut extraction);
+
+		if let Some(after) = f.after {
+			if let Some(Expect {
+							ty,
+							value,
+						}) = after.expect {
+
+				let ty = syn::parse_str::<Type>(&ty).unwrap();
+
+				let t = quote_spanned! { span =>
+					let value = <#ty as FromBytes<#generics>>::from_bytes(input)?;
+					if value != #value {
+						return Err(ReadError::InvalidExpectation);
+					}				
+				};
+				t.to_tokens(&mut extraction);
+			}
+			for name in after.read {
+				let method = syn::parse_str::<Path>(&name).unwrap();
+				let t = quote_spanned!(span => #method::<I, #generics>(input)?;);
+				t.to_tokens(&mut extraction);
+			}
+		}
 	}
 
 	let construction = if style == Style::Struct {
