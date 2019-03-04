@@ -66,6 +66,7 @@ pub fn expand_derive(input: &syn::DeriveInput) -> Result<TokenStream, Vec<syn::E
 	let (impl_generics, ty_generics, where_clause) = container.generics.split_for_impl();
 
 	let t = quote_spanned! { span =>
+		#[automatically_derived]
 		impl #impl_generics FromBytes<#endian, ()> for #name #ty_generics #where_clause {
 			type Output = Self;
 		

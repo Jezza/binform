@@ -68,6 +68,25 @@ use binform::*;
 //#[binform(endian = "be")]
 //struct Container<'a>(#[binform(len = "u8")] Vec<CPIndex<'a, ClassInfo<'a>>>);
 
+
+pub fn main0() {
+	let buf: Vec<u8> = vec![
+		0x01,
+		0x05,
+	];
+
+	let mut input = Cursor::new(buf);
+	let value = Container::from_bytes(&mut input).unwrap();
+	println!("{:?}", value);
+
+}
+
+#[derive(Debug, FromBytes)]
+struct Container {
+	#[binform(len = "u8")]
+	value: Vec<u8>
+}
+
 pub fn main() {
 //	let buf: Vec<u8> = vec![0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x52, 0x00, 0x00, 0x01, 0x00];
 //	let buf: Vec<u8> = vec![0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x08, 0x00, 0x01, 0x00];

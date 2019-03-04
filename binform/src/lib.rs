@@ -54,6 +54,7 @@ macro_rules! def_read {
 		impl<BO: ByteOrder, L $(,$generic)?> FromBytes<BO, L> for $ty $(<$generic>)? {
 			type Output = Self;
 		
+			#[inline]
 			fn from_bytes<I: Read>($input: &mut I) -> ReadResult<Self::Output> {
 				Ok($($method)*)
 			}
@@ -104,6 +105,7 @@ impl<BO, T, L> FromBytes<BO, L> for Vec<T>
 macro_rules! def_write {
     ($ty:ident $(< $generic:ident>)?, ($value:ident, $out:ident) => $($method:tt)*) => {
 		impl<BO: ByteOrder, L $(, $generic)?> ToBytes<BO, L> for $ty $(<$generic>)? {
+	    	#[inline]
 			fn to_bytes<O: Write>(&self, $out: &mut O) -> WriteResult {
 				let $value = self;
 				Ok($($method)*)
