@@ -24,6 +24,9 @@ pub struct Container {
 	pub generics: Generics,
 
 	#[darling(default)]
+	pub debug: bool,
+
+	#[darling(default)]
 	pub tag: Option<String>,
 
 	pub data: ast::Data<EnumVariant, StructField>,
@@ -105,10 +108,9 @@ pub struct Behaviour {
 
 #[derive(Debug, FromMeta)]
 pub struct Expect {
-	#[darling(rename = "type")]
 	pub ty: String,
 	
-	pub value: syn::Lit,
+	pub value: String,
 }
 
 #[derive(Debug, FromVariant)]
@@ -116,7 +118,16 @@ pub struct Expect {
 pub struct EnumVariant {
 	pub ident: Ident,
 
-	pub tag: syn::Lit,
+	pub tag: String,
+
+	#[darling(default)]
+	pub write: Option<String>,
 
 	pub fields: Fields<StructField>,
+
+	#[darling(default)]
+	pub before: Option<Behaviour>,
+
+	#[darling(default)]
+	pub after: Option<Behaviour>,
 }

@@ -180,7 +180,7 @@ struct Info {
 #[derive(Debug, ToBytes, FromBytes, Default)]
 #[binform(endian = "be")]
 pub struct ClassFile<'a> {
-	#[binform(before(expect(type = "u32", value = 0xCA_FE_BA_BE)))]
+	#[binform(before(expect(ty = "u32", value = "0xCA_FE_BA_BE")))]
 	pub minor_version: u16,
 	pub major_version: u16,
 	pub constant_pool: ConstantPool<'a>,
@@ -201,9 +201,8 @@ pub struct ClassFile<'a> {
 #[derive(Debug, ToBytes, FromBytes, Default)]
 #[binform(endian = "be")]
 pub struct ConstantPool<'a> {
-	#[binform(len = "u16", before(expect(type = "u32", value = 0xCA_FE_BA_BE)))]
+	#[binform(len = "u16", before(expect(ty = "u32", value = "0xCA_FE_BA_BE")))]
 	entries: Vec<CPEntry<'a>>,
-//	_marker: PhantomData<&'a ()>,
 }
 
 pub const CONSTANT_CLASS_TAG: u8 = 7;
@@ -212,17 +211,22 @@ pub const CONSTANT_UTF8_TAG: u8 = 1;
 #[derive(Debug, FromBytes, ToBytes)]
 #[binform(endian = "be", tag = "u8")]
 pub enum CPEntry<'a> {
-	#[binform(tag = 2)]
+	#[binform(tag = "4..=6", write = "write_0")]
 	Value,
-	#[binform(tag = 1)]
+	#[binform(tag = "1")]
 	UTF8(UTF8Info<'a>),
-	#[binform(tag = 7)]
+	#[binform(tag = "7")]
 	Class(ClassInfo<'a>),
-	#[binform(tag = 3)]
+	#[binform(tag = "3")]
 	Other {
 		value: u16,
 		extra: u16,
 	}
+}
+
+fn write_0<O: Write, BO: ByteOrder, L>(_value: &CPEntry, output: &mut O) -> WriteResult {
+	output.write_u8(4)?;
+	Ok(())
 }
 
 #[derive(Debug, ToBytes, FromBytes)]

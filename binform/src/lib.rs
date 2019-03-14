@@ -49,14 +49,15 @@ pub trait ToBytes<E: ByteOrder = NativeEndian, L = ()> {
 //#[doc(hidden)]
 //type WriteFunction<O: Write, BO: ByteOrder, L, T> = fn(&T, &mut O) -> WriteResult;
 
+#[macro_export]
 macro_rules! def_read {
-    ($ty:ident $(<$generic:ident>)?, $input:ident => $($method:tt)*) => {
-		impl<BO: ByteOrder, L $(,$generic)?> FromBytes<BO, L> for $ty $(<$generic>)? {
+    ($ty:ident $( ( $($generics:tt)* ) )?, $input:ident => $body:expr) => {
+		impl<BO: ByteOrder, L $( , $($generics)* )?> FromBytes<BO, L> for $ty $( < $($generics)* > )? {
 			type Output = Self;
 		
 			#[inline]
 			fn from_bytes<I: Read>($input: &mut I) -> ReadResult<Self::Output> {
-				Ok($($method)*)
+				Ok($body)
 			}
 		}
     };
@@ -81,7 +82,7 @@ def_read!(f64, input => input.read_f64::<BO>()?);
 
 def_read!(bool, input => input.read_u8()? != 0);
 
-def_read!(PhantomData<T>, _input => PhantomData);
+def_read!(PhantomData(T), _input => PhantomData);
 
 impl<BO, T, L> FromBytes<BO, L> for Vec<T>
 	where
@@ -102,51 +103,68 @@ impl<BO, T, L> FromBytes<BO, L> for Vec<T>
 	}
 }
 
+//impl<BO, L> FromBytes<BO, L> for Vec<u8>
+//	where
+//		BO: ByteOrder,
+//		L: FromBytes<BO>,
+//		L::Output: Into<usize> {
+//	type Output = Vec<u8>;
+//
+//	fn from_bytes<I: Read>(input: &mut I) -> ReadResult<Self::Output> {
+//		let count: usize = L::from_bytes(input)?.into();
+//		let mut output = Vec::with_capacity(count);
+//		input.take(count as u64)
+//			.read_to_end(&mut output)?;
+//		Ok(output)
+//	}
+//}
+
+#[macro_export]
 macro_rules! def_write {
-    ($ty:ident $(< $generic:ident>)?, ($value:ident, $out:ident) => $($method:tt)*) => {
-		impl<BO: ByteOrder, L $(, $generic)?> ToBytes<BO, L> for $ty $(<$generic>)? {
+    ($ty:ident $( ( $($generics:tt)* ) )?, ($out:ident, $value:ident) => $body:expr) => {
+		impl<BO: ByteOrder, L $( , $($generics)* )?> ToBytes<BO, L> for $ty $( < $($generics)* > )? {
 	    	#[inline]
 			fn to_bytes<O: Write>(&self, $out: &mut O) -> WriteResult {
 				let $value = self;
-				Ok($($method)*)
+				Ok($body)
 			}
 		}
     };
 }
 
-def_write!(u8, (v, output) => output.write_u8(*v)?);
-def_write!(u16, (v, output) => output.write_u16::<BO>(*v)?);
-def_write!(u32, (v, output) => output.write_u32::<BO>(*v)?);
-def_write!(u64, (v, output) => output.write_u64::<BO>(*v)?);
+def_write!(u8, (output, v) => output.write_u8(*v)?);
+def_write!(u16, (output, v) => output.write_u16::<BO>(*v)?);
+def_write!(u32, (output, v) => output.write_u32::<BO>(*v)?);
+def_write!(u64, (output, v) => output.write_u64::<BO>(*v)?);
 #[cfg(has_u128)]
-def_write!(u128, (v, output) => output.write_u128::<BO>(*v)?);
+def_write!(u128, (output, v) => output.write_u128::<BO>(*v)?);
 
-def_write!(i8, (v, output) => output.write_i8(*v)?);
-def_write!(i16, (v, output) => output.write_i16::<BO>(*v)?);
-def_write!(i32, (v, output) => output.write_i32::<BO>(*v)?);
-def_write!(i64, (v, output) => output.write_i64::<BO>(*v)?);
+def_write!(i8, (output, v) => output.write_i8(*v)?);
+def_write!(i16, (output, v) => output.write_i16::<BO>(*v)?);
+def_write!(i32, (output, v) => output.write_i32::<BO>(*v)?);
+def_write!(i64, (output, v) => output.write_i64::<BO>(*v)?);
 #[cfg(has_i128)]
-def_write!(i128, (v, output) => output.write_i128::<BO>(*v)?);
+def_write!(i128, (output, v) => output.write_i128::<BO>(*v)?);
 
-def_write!(f32, (v, output) => output.write_f32::<BO>(*v)?);
-def_write!(f64, (v, output) => output.write_f64::<BO>(*v)?);
+def_write!(f32, (output, v) => output.write_f32::<BO>(*v)?);
+def_write!(f64, (output, v) => output.write_f64::<BO>(*v)?);
 
-def_write!(bool, (v, output) => output.write_u8(if *v { 1 } else { 0 })?);
+def_write!(bool, (output, v) => output.write_u8(if *v { 1 } else { 0 })?);
 
-def_write!(PhantomData<T>, (_v, _output) => ());
+def_write!(PhantomData(T), (_output, _v) => ());
 
 impl<BO, T, L> ToBytes<BO, L> for Vec<T>
 	where
 		BO: ByteOrder,
 		T: ToBytes<BO>,
 		L: ToBytes<BO> + TryFrom<usize> {
+
+	#[inline]
 	fn to_bytes<O: Write>(&self, output: &mut O) -> WriteResult {
 		let len = self.len();
-		let value = match L::try_from(len) {
-			Result::Err(_e) => return Err(WriteError::TooLarge(len)),
-			Result::Ok(value) => value,
-		};
-		value.to_bytes(output)?;
+		L::try_from(len)
+			.map_err(|_| WriteError::TooLarge(len))?
+			.to_bytes(output)?;
 
 		for v in self {
 			v.to_bytes(output)?;

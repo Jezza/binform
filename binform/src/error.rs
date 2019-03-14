@@ -8,6 +8,9 @@ pub enum ReadError {
 
 	#[fail(display = "Expectation not met")]
 	InvalidExpectation,
+
+	#[fail(display = "Unknown Tag")]
+	UnknownTag,
 }
 
 #[derive(Debug, Fail)]
